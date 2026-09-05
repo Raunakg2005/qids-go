@@ -1,0 +1,34 @@
+PROPRIETARY AND CONFIDENTIAL LICENSE
+
+Copyright (c) 2026 QIDS. All Rights Reserved.
+
+NOTICE: This software and associated documentation files (the "Software") are
+the proprietary and confidential property of QIDS.
+
+1. GRANT OF LICENSE
+Subject to the terms and conditions of this Agreement, QIDS grants you a
+limited, non-exclusive, non-transferable, revocable license to install and use
+the SDK solely for the purpose of developing, testing, and integrating
+client applications with authorized QIDS services and gateways.
+
+2. RESTRICTIONS
+You shall not, and shall not permit or authorize any third party to:
+a. Decompile, disassemble, reverse-engineer, or attempt to derive the source
+   code, algorithms, or protocols of any portion of the Software.
+b. Copy, modify, alter, translate, or create derivative works of the Software.
+c. Sublicense, sell, resell, lease, distribute, or commercially exploit the
+   Software, in whole or in part, without an explicit commercial license agreement.
+d. Circumvent, disable, or tamper with any security controls, licensing checks,
+   or telemetry systems embedded in the Software.
+e. Remove, obscure, or alter any copyright, trademark, or proprietary notices.
+
+3. INTELLECTUAL PROPERTY
+All title, ownership rights, and intellectual property rights in and to the
+Software remain exclusively with QIDS.
+
+4. DISCLAIMER OF WARRANTIES
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY ARISING OUT OF OR IN CONNECTION WITH THE USE OF THE SOFTWARE.
