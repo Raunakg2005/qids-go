@@ -45,19 +45,19 @@ type ETSIStatus struct {
 
 // ETSI014Client communicates with ETSI GS QKD 014 KMS appliances.
 type ETSI014Client struct {
-	BaseURL        string
-	SourceSAEID    string
+	BaseURL          string
+	SourceSAEID      string
 	DestinationSAEID string
-	HTTPClient     *http.Client
+	HTTPClient       *http.Client
 }
 
 // NewETSI014Client creates a new ETSI client.
 func NewETSI014Client(baseURL, sourceSAE, destSAE string) *ETSI014Client {
 	return &ETSI014Client{
-		BaseURL:        strings.TrimRight(baseURL, "/"),
-		SourceSAEID:    sourceSAE,
+		BaseURL:          strings.TrimRight(baseURL, "/"),
+		SourceSAEID:      sourceSAE,
 		DestinationSAEID: destSAE,
-		HTTPClient:     &http.Client{Timeout: 10 * time.Second},
+		HTTPClient:       &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
