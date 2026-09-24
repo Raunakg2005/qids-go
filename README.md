@@ -4,76 +4,68 @@
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/tag/Raunakg2005/qids-go?label=version)](https://github.com/Raunakg2005/qids-go/releases)
 
-**Official Go client SDK for Quantum Digital Signatures (QDS) & Post-Quantum Information-Theoretic Security.**
+**Official Go client for Quantum Digital Signatures (QDS) through a QIDS gateway.**
 
-`qids-go` provides high-performance, asynchronous and synchronous Go bindings for signing transactions, validating signature tags in sub-millisecond latency, and ingesting quantum key material via ETSI GS QKD 014 standards.
+Signing and verification run on the gateway: the one-time universal-hash key is what makes a tag unforgeable, so a client able to compute tags locally could also forge them. This package authenticates to the gateway, sends your payload as its exact bytes, and also ships the local primitives (Toeplitz hashing, Wald SPRT) and an ETSI GS QKD 014 key-management client.
 
 ---
 
 ## Installation
 
 ```bash
-go get github.com/Raunakg2005/qids-go@v1.3.2
+go get github.com/Raunakg2005/qids-go@v1.3.3
 ```
 
 *Requirements: Go 1.21 or higher.*
 
 ---
 
-## Quickstart
-
-### 1. Initialize Client & Sign a Document
+## Quickstart: sign and verify
 
 ```go
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
+	"os"
 
 	qids "github.com/Raunakg2005/qids-go"
 )
 
 func main() {
-	// Initialize client for your node
-	client := qids.NewQIDSClient("https://qids-gateway.internal.net", "bank_node_alpha")
-
-	// 1. Sign a transaction or document payload
-	payload := []byte("TRANSFER 1,000,000 USD TO ACCT-48910")
-	signResult, err := client.Sign(context.Background(), "DOC-98104", payload, []string{"bank_node_beta"})
-	if err != nil {
-		log.Fatalf("Sign failed: %v", err)
-	}
-
-	fmt.Printf("Signed Document: %s\n", signResult.DocumentID)
-	fmt.Printf("Generated %d recipient signature tag(s)\n", len(signResult.SignatureTags))
-
-	// 2. Designated recipient verifies signature tag
-	verifyResult, err := client.Verify(
-		context.Background(),
-		signResult.DocumentID,
-		payload,
+	client := qids.NewQIDSClientWithKey(
+		os.Getenv("QIDS_GATEWAY_URL"), // your gateway's base URL
 		"bank_node_alpha",
-		signResult.SignatureTags[0],
+		os.Getenv("QIDS_API_KEY"), // sk_live_... / sk_test_...
 	)
-	if err != nil {
-		log.Fatalf("Verify failed: %v", err)
-	}
 
-	fmt.Printf("Verification Verdict: %s (Valid: %t)\n", verifyResult.Reason, verifyResult.IsValid)
-	// Output: Verification Verdict: ACCEPTED (Valid: true)
+	payload := []byte("TRANSFER 1,000,000 USD TO ACCT-48910")
+	sig, err := client.Sign("DOC-98104", payload, []string{"bank_node_beta"})
+	if err != nil {
+		log.Fatalf("sign: %v", err)
+	}
+	tag := sig.SignatureTags[0]
+
+	res, err := client.Verify(sig.DocumentID, payload, tag.HashTag, tag.KeyID)
+	if err != nil {
+		log.Fatalf("verify: %v", err)
+	}
+	fmt.Printf("valid=%t status=%s reason=%s\n", res.IsValid, res.Status, res.Reason)
+	// valid=true status=ACCEPTED reason=ok
 }
 ```
 
+Document IDs are write-once per tenant: signing the same ID twice returns HTTP 409.
+Payloads are sent as `payload_b64`, so binary documents are signed byte-for-byte.
+
 ---
 
-## Core Capabilities
+## What's in the package
 
-- **Information-Theoretic Security**: Immunity against quantum computer attacks (Shor's algorithm).
-- **Sub-Millisecond Verification**: Ultra-low latency deterministic verification pipeline designed for high-frequency trading.
-- **ETSI GS QKD 014 Integration**: Carrier-grade quantum key ingestion.
-- **Zero Black-Box AI/ML**: Fully auditable, closed-form deterministic verification.
+- **Gateway client**: `NewQIDSClientWithKey`, `Sign`, `Verify`. Every call carries `Authorization: Bearer <API_KEY>`.
+- **ETSI GS QKD 014 client**: `NewETSI014Client`, `GetStatus`, `GetEncKeys`, `GetDecKeys`, for talking to a key-management entity directly.
+- **Primitives**: `ToeplitzHash64` (64-bit Toeplitz/LFSR universal hashing) and `NewSequentialTest` (Wald SPRT), both closed-form with no ML.
 
 ---
 
