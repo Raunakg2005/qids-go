@@ -25,6 +25,13 @@ type SignResult struct {
 	SignatureTags []SignatureTag `json:"signature_tags"`
 	SignedAtMs    int64          `json:"signed_at_utc_ms"`
 	Algorithm     string         `json:"algorithm"`
+	// EntropySource says where the one-time key actually came from:
+	// "CSPRNG", "ETSI-GS-QKD-014", or "ETSI-GS-QKD-014-MOCK" (a KMS that
+	// declares itself a mock).
+	EntropySource []string `json:"entropy_source"`
+	// QKDBacked is true only when the key came from an ETSI GS QKD 014 KMS
+	// that is not a mock.
+	QKDBacked bool `json:"qkd_backed"`
 }
 
 // VerifyResult holds the outcome of a signature verification.

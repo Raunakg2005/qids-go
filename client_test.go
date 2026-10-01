@@ -68,3 +68,19 @@ func TestAgainstRealGateway(t *testing.T) {
 		t.Fatalf("different binary document accepted with the same signature: %v %+v", err, forged)
 	}
 }
+
+func TestSignReportsTheKeySource(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"document_id":"d1","signature_tags":[],` +
+			`"entropy_source":["ETSI-GS-QKD-014-MOCK"],"qkd_backed":false}`))
+	}))
+	defer srv.Close()
+
+	res, err := NewQIDSClientWithKey(srv.URL, "SAE_Alice", "k").Sign("d1", []byte("x"), []string{"SAE_Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.EntropySource) != 1 || res.EntropySource[0] != "ETSI-GS-QKD-014-MOCK" || res.QKDBacked {
+		t.Fatalf("key source not reported: %+v", res)
+	}
+}
