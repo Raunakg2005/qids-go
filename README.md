@@ -13,7 +13,7 @@ Signing and verification run on the gateway: the one-time universal-hash key is 
 ## Installation
 
 ```bash
-go get github.com/Raunakg2005/qids-go@v1.3.3
+go get github.com/Raunakg2005/qids-go@v1.3.4
 ```
 
 *Requirements: Go 1.21 or higher.*
