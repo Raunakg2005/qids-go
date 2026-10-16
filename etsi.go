@@ -116,14 +116,15 @@ func (c *ETSI014Client) GetEncKeys(number, sizeBits int) ([]ETSIKey, error) {
 			return nil, err
 		}
 		// A key of the wrong size is a protocol error: stretching or
-		// truncating it would hide a misbehaving KMS.
-		if len(raw)*8 != sizeBits {
-			return nil, fmt.Errorf("ETSI KMS returned key %q of %d bits, requested %d", k.KeyID, len(raw)*8, sizeBits)
+		// truncating it would hide a misbehaving KMS. Sizes are in bits, so
+		// a 100-bit key arrives as 13 bytes.
+		if len(raw) != (sizeBits+7)/8 {
+			return nil, fmt.Errorf("ETSI KMS returned key %q of %d bytes, requested %d bits", k.KeyID, len(raw), sizeBits)
 		}
 		out[i] = ETSIKey{
 			KeyID:    k.KeyID,
 			KeyBytes: raw,
-			SizeBits: len(raw) * 8,
+			SizeBits: sizeBits,
 		}
 	}
 	return out, nil

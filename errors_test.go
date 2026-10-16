@@ -153,6 +153,11 @@ func TestEncKeysRejectsWrongSizeAndUndecodableKeys(t *testing.T) {
 		t.Fatalf("a correct 384-bit key failed: %v %+v", err, keys)
 	}
 
+	key13 := base64.StdEncoding.EncodeToString(make([]byte, 13))
+	if keys, err := etsiKMS(t, key13).GetEncKeys(1, 100); err != nil || keys[0].SizeBits != 100 {
+		t.Fatalf("a 100-bit key in 13 bytes failed: %v %+v", err, keys)
+	}
+
 	key32 := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	if keys, err := etsiKMS(t, key32).GetEncKeys(1, 384); err == nil {
 		t.Fatalf("a 256-bit key was accepted as 384 bits: %+v", keys)
