@@ -111,17 +111,38 @@ func (c *ETSI014Client) GetEncKeys(number, sizeBits int) ([]ETSIKey, error) {
 
 	out := make([]ETSIKey, len(result.Keys))
 	for i, k := range result.Keys {
-		raw, err := base64.StdEncoding.DecodeString(k.Key)
+		raw, err := decodeKey(k.KeyID, k.Key)
 		if err != nil {
-			raw, _ = hex.DecodeString(k.Key)
+			return nil, err
+		}
+		// A key of the wrong size is a protocol error: stretching or
+		// truncating it would hide a misbehaving KMS.
+		if len(raw)*8 != sizeBits {
+			return nil, fmt.Errorf("ETSI KMS returned key %q of %d bits, requested %d", k.KeyID, len(raw)*8, sizeBits)
 		}
 		out[i] = ETSIKey{
 			KeyID:    k.KeyID,
 			KeyBytes: raw,
-			SizeBits: sizeBits,
+			SizeBits: len(raw) * 8,
 		}
 	}
 	return out, nil
+}
+
+// decodeKey decodes a key as base64 (what ETSI GS QKD 014 specifies), falling
+// back to hex. A key that is neither, or empty, is an error.
+func decodeKey(keyID, s string) ([]byte, error) {
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		var herr error
+		if raw, herr = hex.DecodeString(s); herr != nil {
+			return nil, fmt.Errorf("ETSI KMS returned key %q that is neither base64 nor hex: %v", keyID, err)
+		}
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("ETSI KMS returned an empty key %q", keyID)
+	}
+	return raw, nil
 }
 
 // GetDecKeys retrieves matching decryption keys by key IDs (Bob/Receiver side).
@@ -158,9 +179,9 @@ func (c *ETSI014Client) GetDecKeys(keyIDs []string) ([]ETSIKey, error) {
 
 	out := make([]ETSIKey, len(result.Keys))
 	for i, k := range result.Keys {
-		raw, err := base64.StdEncoding.DecodeString(k.Key)
+		raw, err := decodeKey(k.KeyID, k.Key)
 		if err != nil {
-			raw, _ = hex.DecodeString(k.Key)
+			return nil, err
 		}
 		out[i] = ETSIKey{
 			KeyID:    k.KeyID,

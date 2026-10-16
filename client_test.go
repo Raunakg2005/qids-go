@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -66,6 +67,26 @@ func TestAgainstRealGateway(t *testing.T) {
 	forged, err := c.Verify(docID, other, tag.HashTag, tag.KeyID)
 	if err != nil || forged.IsValid {
 		t.Fatalf("different binary document accepted with the same signature: %v %+v", err, forged)
+	}
+	if forged.Threat == "" {
+		t.Fatalf("rejection carries no threat attribution: %+v", forged)
+	}
+
+	// Each recipient verifies its own tag as itself.
+	multi, err := c.Sign(docID+"-m", binaryDoc, []string{"SAE_Bob", "SAE_Carol"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range multi.SignatureTags {
+		res, err := c.VerifyTag(multi.DocumentID, binaryDoc, tag)
+		if err != nil || !res.IsValid {
+			t.Fatalf("%s's tag rejected: %v %+v", tag.RecipientSAEID, err, res)
+		}
+	}
+
+	_, err = NewQIDSClientWithKey(url, "SAE_Alice", "sk_test_not_a_real_key").Sign(docID+"-x", binaryDoc, nil)
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("a bad key should fail with ErrUnauthorized, got %v", err)
 	}
 }
 
