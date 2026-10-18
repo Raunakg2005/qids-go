@@ -175,12 +175,12 @@ func parsePQCPublicKey(publicKeyPEM string) (string, sign.Scheme, sign.PublicKey
 }
 
 // decodeStrictBase64 accepts standard, padded base64 and nothing else (no
-// line breaks), as the reference verifier does.
+// line breaks), as the reference verifier (Python, validate=True) does.
 func decodeStrictBase64(s string) ([]byte, bool) {
 	if s == "" || strings.ContainsAny(s, "\r\n") {
 		return nil, false
 	}
-	b, err := base64.StdEncoding.Strict().DecodeString(s)
+	b, err := base64.StdEncoding.DecodeString(s)
 	return b, err == nil
 }
 
