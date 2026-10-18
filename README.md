@@ -13,10 +13,10 @@ Signing and verification run on the gateway: the one-time universal-hash key is 
 ## Installation
 
 ```bash
-go get github.com/Raunakg2005/qids-go@v1.3.5
+go get github.com/Raunakg2005/qids-go@v1.4.0
 ```
 
-*Requirements: Go 1.21 or higher.*
+*Requirements: Go 1.25 or higher (1.4.0 and later; ML-DSA verification uses [cloudflare/circl](https://github.com/cloudflare/circl), which needs it). v1.3.5 still supports Go 1.21.*
 
 ---
 
@@ -66,6 +66,36 @@ Payloads are sent as `payload_b64`, so binary documents are signed byte-for-byte
 
 ---
 
+## Verify a receipt offline (ML-DSA, FIPS 204)
+
+From gateway 1.4.0, every sign response carries `PQC`: an ML-DSA signature over a statement about the document (tenant, document id, SHA3-256 hash, time, recipients, OTUH signature). Anyone with the tenant's public key can check it without contacting the gateway:
+
+```go
+// Once: fetch the tenant's public key and pin it (store it with your config).
+keys, err := client.GetPQCKeys(tenantID) // public endpoint; active key first
+if err != nil {
+	log.Fatal(err)
+}
+pinnedPEM := keys[0].PublicKeyPEM
+
+// Any time later, offline:
+claims, err := qids.VerifyPQCReceipt(payload, *sig.PQC, pinnedPEM, tenantID)
+var re *qids.ReceiptError
+switch {
+case errors.As(err, &re):
+	log.Fatalf("receipt rejected: %s", re.Reason) // bad_signature, document_mismatch, tenant_mismatch, ...
+case err != nil:
+	log.Fatal(err)
+}
+fmt.Println(claims.DocumentID, claims.SignedAtMs, claims.Recipients)
+```
+
+`VerifyPQCReceipt` checks the signature over the statement's exact bytes under the FIPS 204 context `qids-receipt-v1`, that the statement names this key (its id is the first 32 hex characters of SHA-256 over the raw key) and its parameter set (ML-DSA-44, -65 or -87), that the statement's `document_hash` is the SHA3-256 of `payload`, and the tenant (pass `""` to skip). Every failure is a `*qids.ReceiptError`; `errors.Is(err, qids.ErrInvalidReceipt)` matches them all.
+
+Take the public key from a source you trust, fetched once and pinned, never from the response you are checking. What the signature proves: the holder of the tenant's QIDS signing key attested this document at this time. The gateway holds that key on the tenant's behalf, so it is the gateway's attestation for the tenant.
+
+---
+
 ## Errors
 
 A non-200 response is an `*qids.APIError` carrying the status code and the gateway's `error`, `message` and `reason` fields. Match the common cases with `errors.Is`:
@@ -87,7 +117,8 @@ A client with an empty API key fails with `qids.ErrNoAPIKey` before sending anyt
 
 ## What's in the package
 
-- **Gateway client**: `NewClient`, `Sign`, `VerifyTag`, `Verify`. Every call carries `Authorization: Bearer <API_KEY>`.
+- **Gateway client**: `NewClient`, `Sign`, `VerifyTag`, `Verify`. Every call carries `Authorization: Bearer <API_KEY>`. `GetPQCKeys` fetches a tenant's public ML-DSA keys (no API key needed).
+- **Offline receipt verification**: `VerifyPQCReceipt` checks a receipt's ML-DSA (FIPS 204) signature with [cloudflare/circl](https://github.com/cloudflare/circl), with no call to the gateway.
 - **ETSI GS QKD 014 client**: `NewETSI014Client`, `GetStatus`, `GetEncKeys`, `GetDecKeys`, for talking to a key-management entity directly. A key that does not decode, or whose size differs from the one requested, is an error rather than a short or empty key.
 - **Primitives**: `ToeplitzHash64` (64-bit Toeplitz/LFSR universal hashing) and `NewSequentialTest` (Wald SPRT), both closed-form with no ML.
 
