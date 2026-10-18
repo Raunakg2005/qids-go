@@ -32,6 +32,10 @@ type SignResult struct {
 	// QKDBacked is true only when the key came from an ETSI GS QKD 014 KMS
 	// that is not a mock.
 	QKDBacked bool `json:"qkd_backed"`
+	// PQC is the receipt's ML-DSA (FIPS 204) signature, which anyone can
+	// check offline with VerifyPQCReceipt and the tenant's published key.
+	// Nil from a gateway older than 1.4.0.
+	PQC *PQCReceipt `json:"pqc,omitempty"`
 }
 
 // VerifyResult holds the outcome of a signature verification.
