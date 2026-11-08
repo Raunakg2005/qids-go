@@ -13,7 +13,7 @@ Signing and verification run on the gateway: the one-time universal-hash key is 
 ## Installation
 
 ```bash
-go get github.com/Raunakg2005/qids-go@v1.4.0
+go get github.com/Raunakg2005/qids-go@v1.5.0
 ```
 
 *Requirements: Go 1.25 or higher (1.4.0 and later; ML-DSA verification uses [cloudflare/circl](https://github.com/cloudflare/circl), which needs it). v1.3.5 still supports Go 1.21.*
@@ -94,6 +94,40 @@ fmt.Println(claims.DocumentID, claims.SignedAtMs, claims.Recipients)
 
 Take the public key from a source you trust, fetched once and pinned, never from the response you are checking. What the signature proves: the holder of the tenant's QIDS signing key attested this document at this time. The gateway holds that key on the tenant's behalf, so it is the gateway's attestation for the tenant.
 
+## Prove a receipt is in the transparency log
+
+From gateway 1.5.0 every receipt also goes into its tenant's append-only Merkle log, built as RFC 9162 specifies. A signed tree head commits to the whole log; an inclusion proof shows a receipt is in it; a consistency proof shows a later tree head extends an earlier one, so an entry rewritten or removed, or a log shown differently to different people, is detected. All of it is checked offline, against the tenant's pinned key.
+
+```go
+reader := qids.NewQIDSClient(gatewayURL, "monitor") // the log routes are public
+sth, err := reader.GetTreeHead(tenantID)
+if err != nil {
+	log.Fatal(err)
+}
+head, err := qids.VerifyTreeHead(*sth, pinnedPEM, tenantID)
+if err != nil {
+	log.Fatal(err) // a *qids.TlogError: bad_signature, tenant_mismatch, ...
+}
+
+leaf, _ := qids.ReceiptLeafHash(*sig.PQC)
+proof, err := reader.GetInclusionProof(tenantID, leaf, head.TreeSize)
+if err != nil {
+	log.Fatal(err)
+}
+path, _ := qids.DecodeHashes(proof.AuditPath)
+root, _ := hex.DecodeString(head.RootHash)
+if err := qids.VerifyInclusion(leaf, proof.Index, head.TreeSize, path, root); err != nil {
+	log.Fatal(err) // root_mismatch: not in this log
+}
+
+// Later: the log grew. Check it extends the tree head you kept.
+cons, _ := reader.GetConsistencyProof(tenantID, kept.TreeSize, head.TreeSize)
+hashes, _ := qids.DecodeHashes(cons.Proof)
+err = qids.VerifyConsistency(kept.TreeSize, head.TreeSize, keptRoot, root, hashes) // inconsistent, fork: a rewritten log
+```
+
+Every failure is a `*qids.TlogError` whose `Reason` names the check; `errors.Is(err, qids.ErrInvalidTlog)` matches them all. Tree heads are signed by the gateway itself; independent witnesses that co-sign them are on the roadmap. Keep the last tree head you verified and check consistency from it to the next: that is what catches a rewrite.
+
 ---
 
 ## Errors
@@ -119,6 +153,7 @@ A client with an empty API key fails with `qids.ErrNoAPIKey` before sending anyt
 
 - **Gateway client**: `NewClient`, `Sign`, `VerifyTag`, `Verify`. Every call carries `Authorization: Bearer <API_KEY>`. `GetPQCKeys` fetches a tenant's public ML-DSA keys (no API key needed).
 - **Offline receipt verification**: `VerifyPQCReceipt` checks a receipt's ML-DSA (FIPS 204) signature with [cloudflare/circl](https://github.com/cloudflare/circl), with no call to the gateway.
+- **Transparency log**: `VerifyTreeHead`, `VerifyInclusion` and `VerifyConsistency` check a tenant's signed tree heads and RFC 9162 proofs offline; `GetTreeHead`, `GetInclusionProof` and `GetConsistencyProof` fetch them.
 - **ETSI GS QKD 014 client**: `NewETSI014Client`, `GetStatus`, `GetEncKeys`, `GetDecKeys`, for talking to a key-management entity directly. A key that does not decode, or whose size differs from the one requested, is an error rather than a short or empty key.
 - **Primitives**: `ToeplitzHash64` (64-bit Toeplitz/LFSR universal hashing) and `NewSequentialTest` (Wald SPRT), both closed-form with no ML.
 
