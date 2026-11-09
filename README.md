@@ -130,6 +130,20 @@ Every failure is a `*qids.TlogError` whose `Reason` names the check; `errors.Is(
 
 ---
 
+## QDS mode: no trusted dealer (preview)
+
+With a gateway configured for QDS mode, the gateway keeps no share: each
+recipient verifies on its own verifier node. Not in a gateway release yet.
+
+```go
+res, err := client.QDSSign("invoice-7", document, []string{"SAE_Bob", "SAE_Charlie"})
+// res.Delivered: map[SAE_Bob:stored ...]; res.PQC: the ML-DSA receipt
+
+// At Bob's organisation, on Bob's own node, with its operator token:
+v, err := qids.NewVerifierNode("https://verifier.bob.example:8090", bobToken).Verify(document, res.Envelope)
+// v.Accepted, v.Reason
+```
+
 ## Errors
 
 A non-200 response is an `*qids.APIError` carrying the status code and the gateway's `error`, `message` and `reason` fields. Match the common cases with `errors.Is`:
