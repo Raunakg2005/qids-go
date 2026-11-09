@@ -13,7 +13,7 @@ Signing and verification run on the gateway: the one-time universal-hash key is 
 ## Installation
 
 ```bash
-go get github.com/Raunakg2005/qids-go@v1.5.0
+go get github.com/Raunakg2005/qids-go@v1.6.1
 ```
 
 *Requirements: Go 1.25 or higher (1.4.0 and later; ML-DSA verification uses [cloudflare/circl](https://github.com/cloudflare/circl), which needs it). v1.3.5 still supports Go 1.21.*

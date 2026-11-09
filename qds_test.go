@@ -74,6 +74,70 @@ func TestVerifierNodeTokenRules(t *testing.T) {
 	}
 }
 
+// The end-of-phase audit (gateway audit 2.84).
+
+func TestVerifierNodeRefusesAnEmptyDocumentBeforeSending(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
+	defer srv.Close()
+	for _, doc := range [][]byte{nil, {}} {
+		if _, err := NewVerifierNode(srv.URL, "op").Verify(doc, nil); !errors.Is(err, ErrEmptyDocument) {
+			t.Fatalf("empty document: %v", err)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("%d requests sent", calls)
+	}
+}
+
+func TestVerifierNodeKeepsItsTokenOutOfLogs(t *testing.T) {
+	n := NewVerifierNode("http://127.0.0.1:1", "node-op-secret")
+	for _, f := range []string{"%v", "%+v", "%#v", "%s"} {
+		if out := fmt.Sprintf(f, n); strings.Contains(out, "node-op-secret") {
+			t.Fatalf("%s leaks the token: %s", f, out)
+		}
+		if out := fmt.Sprintf(f, *n); strings.Contains(out, "node-op-secret") {
+			t.Fatalf("%s leaks the token: %s", f, out)
+		}
+	}
+	bare := &VerifierNode{URL: "http://127.0.0.1:1"} // no HTTPClient: no panic
+	if _, _, err := bare.Deliver(map[string]interface{}{}); err == nil {
+		t.Fatal("expected a connection error")
+	}
+}
+
+func TestVerifierNodeAnswersThatAreNotVerdicts(t *testing.T) {
+	answer := func(status int, body string) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	for _, c := range []struct {
+		status int
+		body   string
+	}{{200, "<html>"}, {200, "[]"}, {200, `{"reason":"ok"}`}, {200, `{"accepted":"false"}`}, {404, `{"error":"Not found"}`}} {
+		if _, err := NewVerifierNode(answer(c.status, c.body), "op").Verify([]byte("d"), nil); err == nil {
+			t.Fatalf("verify %d %s: no error", c.status, c.body)
+		}
+	}
+	stored, reason, err := NewVerifierNode(answer(400, `{"stored":false,"reason":"envelope_unauthentic"}`), "").
+		Deliver(map[string]interface{}{})
+	if err != nil || stored || reason != "envelope_unauthentic" {
+		t.Fatalf("refused: %v %q %v", stored, reason, err)
+	}
+	for _, c := range []struct {
+		status int
+		body   string
+	}{{404, `{"error":"Not found"}`}, {200, `{"stored":false}`}, {200, "<html>"}} {
+		if _, _, err := NewVerifierNode(answer(c.status, c.body), "").Deliver(map[string]interface{}{}); err == nil {
+			t.Fatalf("deliver %d %s: no error", c.status, c.body)
+		}
+	}
+}
+
 // With QIDS_TEST_QDS_GATEWAY_URL, QIDS_TEST_API_KEY, QIDS_TEST_QDS_NODES
 // ("name=url,...") and QIDS_TEST_QDS_TOKENS ("name=token,..."): sign on a real
 // gateway in QDS mode and verify on the real nodes.
