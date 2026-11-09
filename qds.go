@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -54,6 +55,12 @@ func (c *QIDSClient) QDSSign(docID string, payload []byte, holders []string) (*Q
 // sent when the node has no operator token.
 var ErrNoNodeToken = errors.New("qids: verifying on a node needs its operator token")
 
+// ErrEmptyDocument is returned by VerifierNode.Verify, before any request is
+// sent, for an empty or nil document. The node binds its key to the first
+// document it is asked about, for good, so a nil passed by mistake would make
+// the signature unverifiable for every holder.
+var ErrEmptyDocument = errors.New("qids: the document to verify is empty")
+
 // QDSVerdict is a verifier node's answer.
 type QDSVerdict struct {
 	Holder   string `json:"holder"`
@@ -79,6 +86,39 @@ func NewVerifierNode(url, token string) *VerifierNode {
 		HTTPClient: &http.Client{Timeout: 30 * time.Second}}
 }
 
+// Format prints the node with its token redacted, for every verb, so
+// logging a VerifierNode never leaks the token that authorises verifying.
+func (n VerifierNode) Format(f fmt.State, verb rune) {
+	token := "<none>"
+	if n.Token != "" {
+		token = "<redacted>"
+	}
+	fmt.Fprintf(f, "VerifierNode{URL:%q Token:%s}", n.URL, token)
+}
+
+func (n *VerifierNode) client() *http.Client {
+	if n.HTTPClient != nil {
+		return n.HTTPClient
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
+// decodeObject reads a JSON object answer. Anything else is an error: a
+// proxy's HTML page is never read as a verdict.
+func decodeObject(op string, resp *http.Response, out interface{}) error {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("%s: reading the answer failed: %w", op, err)
+	}
+	if t := bytes.TrimSpace(raw); len(t) == 0 || t[0] != '{' {
+		return fmt.Errorf("%s: HTTP %d is not a verifier node's answer", op, resp.StatusCode)
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("failed to decode %s response: %w", op, err)
+	}
+	return nil
+}
+
 func (n *VerifierNode) post(op, path string, body interface{}, auth bool) (*http.Response, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -95,7 +135,7 @@ func (n *VerifierNode) post(op, path string, body interface{}, auth bool) (*http
 		}
 		req.Header.Set("Authorization", "Bearer "+n.Token)
 	}
-	resp, err := n.HTTPClient.Do(req)
+	resp, err := n.client().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s request failed: %w", op, err)
 	}
@@ -104,27 +144,44 @@ func (n *VerifierNode) post(op, path string, body interface{}, auth bool) (*http
 
 // Deliver hands the node an envelope. stored is false, with the node's
 // reason, if it refused it (for example an envelope that is not the signer's).
+// Any other answer (no node at that URL, a 404, a 5xx) is an error.
 func (n *VerifierNode) Deliver(envelope map[string]interface{}) (stored bool, reason string, err error) {
 	resp, err := n.post("qds deliver", "/v1/qds/signatures", map[string]interface{}{"envelope": envelope}, false)
 	if err != nil {
 		return false, "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 500 {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
 		return false, "", newAPIError("qds deliver", resp)
 	}
 	var out struct {
-		Stored bool   `json:"stored"`
+		Stored *bool  `json:"stored"`
 		Reason string `json:"reason"`
+		Error  string `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return false, "", fmt.Errorf("failed to decode qds deliver response: %w", err)
+	if err := decodeObject("qds deliver", resp, &out); err != nil {
+		return false, "", err
 	}
-	return out.Stored, out.Reason, nil
+	if resp.StatusCode == http.StatusOK {
+		if out.Stored == nil || !*out.Stored {
+			return false, "", fmt.Errorf("qds deliver: HTTP 200 without \"stored\": true")
+		}
+		return true, "", nil
+	}
+	if out.Reason == "" {
+		out.Reason = out.Error
+	}
+	if out.Reason == "" {
+		out.Reason = "refused"
+	}
+	return false, out.Reason, nil
 }
 
 // Verify asks the node for its verdict on document under envelope.
 func (n *VerifierNode) Verify(document []byte, envelope map[string]interface{}) (*QDSVerdict, error) {
+	if len(document) == 0 {
+		return nil, ErrEmptyDocument
+	}
 	resp, err := n.post("qds verify", "/v1/qds/verify", map[string]interface{}{
 		"document_b64": base64.StdEncoding.EncodeToString(document),
 		"envelope":     envelope,
@@ -136,9 +193,17 @@ func (n *VerifierNode) Verify(document []byte, envelope map[string]interface{}) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, newAPIError("qds verify", resp)
 	}
-	var v QDSVerdict
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
-		return nil, fmt.Errorf("failed to decode qds verify response: %w", err)
+	var out struct {
+		QDSVerdict
+		Accepted *bool `json:"accepted"`
 	}
+	if err := decodeObject("qds verify", resp, &out); err != nil {
+		return nil, err
+	}
+	if out.Accepted == nil {
+		return nil, fmt.Errorf("qds verify: the answer has no \"accepted\"")
+	}
+	v := out.QDSVerdict
+	v.Accepted = *out.Accepted
 	return &v, nil
 }
