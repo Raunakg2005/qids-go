@@ -126,14 +126,31 @@ hashes, _ := qids.DecodeHashes(cons.Proof)
 err = qids.VerifyConsistency(kept.TreeSize, head.TreeSize, keptRoot, root, hashes) // inconsistent, fork: a rewritten log
 ```
 
-Every failure is a `*qids.TlogError` whose `Reason` names the check; `errors.Is(err, qids.ErrInvalidTlog)` matches them all. Tree heads are signed by the gateway itself; independent witnesses that co-sign them are on the roadmap. Keep the last tree head you verified and check consistency from it to the next: that is what catches a rewrite.
+Every failure is a `*qids.TlogError` whose `Reason` names the check; `errors.Is(err, qids.ErrInvalidTlog)` matches them all. Keep the last tree head you verified and check consistency from it to the next: that is what catches a rewrite.
+
+### Witnessed tree heads
+
+Tree heads are signed with the tenant's key, which the gateway's operator holds, so the operator could show you one history and someone else another. Independent witnesses (`python -m qids.witness` in the Python package) co-sign a head only if it extends the last one they co-signed. Require co-signatures from enough witnesses you trust, and the head you accept is on the one history they all saw:
+
+```go
+cosigned, err := client.GetCosignedTreeHead(tenantID)
+head, err := qids.VerifyCosignedTreeHead(*cosigned, pinnedPEM,
+	[]string{witnessA, witnessB, witnessC}, // the witnesses' ML-DSA-65 public keys, pinned
+	2,                                      // the quorum
+	tenantID)
+// head.TreeSize, head.RootHash: check inclusion and consistency against these.
+// head.Witnesses: who co-signed; head.CosignedAtMs: how fresh, by their clocks.
+```
+
+It takes the largest head that the quorum co-signed (on a busy log the newest may have only some of them yet), and counts each witness once. It refuses a witness key that is the log's own key (`witness_is_log_key`): the operator holds that one. With fewer valid co-signatures than the quorum it fails with `quorum_not_met`. This holds only while fewer than the quorum of the witnesses you trust are dishonest; who runs them is your decision. `VerifyCosignature` checks one co-signature.
 
 ---
 
-## QDS mode: no trusted dealer (preview)
+## QDS mode: no trusted dealer (beta)
 
 With a gateway configured for QDS mode, the gateway keeps no share: each
-recipient verifies on its own verifier node. Not in a gateway release yet.
+recipient verifies on its own verifier node. A beta, in gateway 2.0.0b1:
+the protocol awaits external review, and has run against a mock KME only.
 
 ```go
 res, err := client.QDSSign("invoice-7", document, []string{"SAE_Bob", "SAE_Charlie"})
@@ -167,7 +184,7 @@ A client with an empty API key fails with `qids.ErrNoAPIKey` before sending anyt
 
 - **Gateway client**: `NewClient`, `Sign`, `VerifyTag`, `Verify`. Every call carries `Authorization: Bearer <API_KEY>`. `GetPQCKeys` fetches a tenant's public ML-DSA keys (no API key needed).
 - **Offline receipt verification**: `VerifyPQCReceipt` checks a receipt's ML-DSA (FIPS 204) signature with [cloudflare/circl](https://github.com/cloudflare/circl), with no call to the gateway.
-- **Transparency log**: `VerifyTreeHead`, `VerifyInclusion` and `VerifyConsistency` check a tenant's signed tree heads and RFC 9162 proofs offline; `GetTreeHead`, `GetInclusionProof` and `GetConsistencyProof` fetch them.
+- **Transparency log**: `VerifyTreeHead`, `VerifyInclusion` and `VerifyConsistency` check a tenant's signed tree heads and RFC 9162 proofs offline; `GetTreeHead`, `GetInclusionProof` and `GetConsistencyProof` fetch them. `VerifyCosignedTreeHead` and `VerifyCosignature` check witnesses' co-signatures; `GetCosignedTreeHead` fetches them.
 - **ETSI GS QKD 014 client**: `NewETSI014Client`, `GetStatus`, `GetEncKeys`, `GetDecKeys`, for talking to a key-management entity directly. A key that does not decode, or whose size differs from the one requested, is an error rather than a short or empty key.
 - **Primitives**: `ToeplitzHash64` (64-bit Toeplitz/LFSR universal hashing) and `NewSequentialTest` (Wald SPRT), both closed-form with no ML.
 
